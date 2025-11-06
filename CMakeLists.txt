@@ -73,6 +73,12 @@ if(BUILD_EXAMPLES)
 
     add_executable(imu_gps_fusion examples/imu_gps_fusion.cpp)
     target_link_libraries(imu_gps_fusion sensor_fusion)
+
+    add_executable(ekf_debug examples/ekf_debug.cpp)
+    target_link_libraries(ekf_debug sensor_fusion)
+
+    add_executable(ekf_debug2 examples/ekf_debug2.cpp)
+    target_link_libraries(ekf_debug2 sensor_fusion)
 endif()
 
 # Tests

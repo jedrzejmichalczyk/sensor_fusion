@@ -205,38 +205,20 @@ void ExtendedKalmanFilter::updateGPS(const GPSMeasurement& gps_meas)
 {
     if (!gps_meas.valid) return;
 
-    // Measurement model: z = [p; v] (6 dimensional)
-    const int meas_size = 6;
+    // Use sequential scalar updates for numerical stability
+    // Process each measurement component independently
 
-    // Measurement matrix H (6x15)
-    double H[meas_size * ERROR_STATE_SIZE] = {0};
-
-    // Position part: H[0:3, 0:3] = I
+    // Update with position measurements
     for (int i = 0; i < 3; ++i) {
-        H[i * ERROR_STATE_SIZE + i] = 1.0;
+        scalarUpdate(gps_meas.position_ned[i], state_.position_ned[i],
+                     i, gps_pos_std_ * gps_pos_std_);
     }
 
-    // Velocity part: H[3:6, 3:6] = I
+    // Update with velocity measurements
     for (int i = 0; i < 3; ++i) {
-        H[(3 + i) * ERROR_STATE_SIZE + (3 + i)] = 1.0;
+        scalarUpdate(gps_meas.velocity_ned[i], state_.velocity_ned[i],
+                     3 + i, gps_vel_std_ * gps_vel_std_);
     }
-
-    // Measurement noise covariance R (6x6)
-    double R[meas_size * meas_size] = {0};
-    for (int i = 0; i < 3; ++i) {
-        R[i * meas_size + i] = gps_pos_std_ * gps_pos_std_;
-        R[(3 + i) * meas_size + (3 + i)] = gps_vel_std_ * gps_vel_std_;
-    }
-
-    // Innovation: z - h(x)
-    double innovation[meas_size];
-    for (int i = 0; i < 3; ++i) {
-        innovation[i] = gps_meas.position_ned[i] - state_.position_ned[i];
-        innovation[3 + i] = gps_meas.velocity_ned[i] - state_.velocity_ned[i];
-    }
-
-    // Perform measurement update
-    measurementUpdate(H, R, innovation, meas_size);
 }
 
 void ExtendedKalmanFilter::updateBarometer(const BarometerMeasurement& baro_meas)
@@ -410,6 +392,95 @@ void ExtendedKalmanFilter::measurementUpdate(const double* H, const double* R,
 
     // Copy result back
     std::copy(P_new.begin(), P_new.end(), P_.begin());
+}
+
+void ExtendedKalmanFilter::scalarUpdate(double measurement_value,
+                                       double predicted_value,
+                                       int state_index,
+                                       double R)
+{
+    // Innovation: y = z - h(x)
+    double innovation = measurement_value - predicted_value;
+
+    // Measurement Jacobian H (1 x 15 vector)
+    // H has 1 at state_index, 0 elsewhere
+    std::array<double, ERROR_STATE_SIZE> H = {0};
+    H[state_index] = 1.0;
+
+    // Innovation covariance: S = H*P*H' + R  (scalar)
+    double S = R;  // Start with R
+    for (int i = 0; i < ERROR_STATE_SIZE; ++i) {
+        S += H[i] * P_[i * ERROR_STATE_SIZE + state_index];
+    }
+
+    // Check for numerical issues
+    if (S <= 0.0 || std::isnan(S) || std::isinf(S)) {
+        return;  // Skip this update
+    }
+
+    // Kalman gain: K = P*H' / S  (15 x 1 vector)
+    std::array<double, ERROR_STATE_SIZE> K;
+    for (int i = 0; i < ERROR_STATE_SIZE; ++i) {
+        K[i] = P_[i * ERROR_STATE_SIZE + state_index] / S;
+    }
+
+    // State update: x = x + K*innovation
+    std::array<double, ERROR_STATE_SIZE> error_state = {0};
+    for (int i = 0; i < ERROR_STATE_SIZE; ++i) {
+        error_state[i] = K[i] * innovation;
+    }
+    applyErrorStateCorrection(error_state);
+
+    // Covariance update using Joseph form for numerical stability:
+    // P = (I - K*H) * P * (I - K*H)' + K*R*K'
+
+    // Compute (I - K*H)
+    std::vector<double> IKH(ERROR_STATE_SIZE * ERROR_STATE_SIZE);
+    for (int i = 0; i < ERROR_STATE_SIZE; ++i) {
+        for (int j = 0; j < ERROR_STATE_SIZE; ++j) {
+            IKH[i * ERROR_STATE_SIZE + j] = (i == j ? 1.0 : 0.0) - K[i] * H[j];
+        }
+    }
+
+    // Temp = (I-KH) * P
+    std::vector<double> Temp(ERROR_STATE_SIZE * ERROR_STATE_SIZE);
+    for (int i = 0; i < ERROR_STATE_SIZE; ++i) {
+        for (int j = 0; j < ERROR_STATE_SIZE; ++j) {
+            Temp[i * ERROR_STATE_SIZE + j] = 0.0;
+            for (int k = 0; k < ERROR_STATE_SIZE; ++k) {
+                Temp[i * ERROR_STATE_SIZE + j] += IKH[i * ERROR_STATE_SIZE + k] * P_[k * ERROR_STATE_SIZE + j];
+            }
+        }
+    }
+
+    // P_new = Temp * (I-KH)' + K*R*K'
+    std::vector<double> P_new(ERROR_STATE_SIZE * ERROR_STATE_SIZE);
+    for (int i = 0; i < ERROR_STATE_SIZE; ++i) {
+        for (int j = 0; j < ERROR_STATE_SIZE; ++j) {
+            P_new[i * ERROR_STATE_SIZE + j] = 0.0;
+            for (int k = 0; k < ERROR_STATE_SIZE; ++k) {
+                P_new[i * ERROR_STATE_SIZE + j] += Temp[i * ERROR_STATE_SIZE + k] * IKH[j * ERROR_STATE_SIZE + k];
+            }
+            // Add K*R*K'
+            P_new[i * ERROR_STATE_SIZE + j] += K[i] * R * K[j];
+        }
+    }
+
+    // Copy back to P_ and ensure symmetry
+    for (int i = 0; i < ERROR_STATE_SIZE; ++i) {
+        for (int j = 0; j < ERROR_STATE_SIZE; ++j) {
+            P_[i * ERROR_STATE_SIZE + j] = P_new[i * ERROR_STATE_SIZE + j];
+        }
+    }
+
+    // Enforce symmetry (average with transpose)
+    for (int i = 0; i < ERROR_STATE_SIZE; ++i) {
+        for (int j = i + 1; j < ERROR_STATE_SIZE; ++j) {
+            double avg = 0.5 * (P_[i * ERROR_STATE_SIZE + j] + P_[j * ERROR_STATE_SIZE + i]);
+            P_[i * ERROR_STATE_SIZE + j] = avg;
+            P_[j * ERROR_STATE_SIZE + i] = avg;
+        }
+    }
 }
 
 void ExtendedKalmanFilter::applyErrorStateCorrection(const std::array<double, ERROR_STATE_SIZE>& error_state)

@@ -124,7 +124,17 @@ private:
     void predictCovariance(double F[ERROR_STATE_SIZE][ERROR_STATE_SIZE], double dt);
 
     /**
-     * @brief Generic measurement update
+     * @brief Scalar measurement update (Joseph form, numerically stable)
+     * @param measurement_value Measured value
+     * @param predicted_value Predicted value h(x)
+     * @param state_index Index in state vector being measured
+     * @param R Measurement variance (scalar)
+     */
+    void scalarUpdate(double measurement_value, double predicted_value,
+                     int state_index, double R);
+
+    /**
+     * @brief Generic measurement update (DEPRECATED - use scalarUpdate)
      * @param H Measurement matrix
      * @param R Measurement noise covariance
      * @param innovation Innovation vector (z - h(x))
