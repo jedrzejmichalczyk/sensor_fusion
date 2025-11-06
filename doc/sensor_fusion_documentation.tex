@@ -1,0 +1,436 @@
+\documentclass[12pt,a4paper]{article}
+\usepackage[utf8]{inputenc}
+\usepackage[english]{babel}
+\usepackage{amsmath}
+\usepackage{amsfonts}
+\usepackage{amssymb}
+\usepackage{graphicx}
+\usepackage{hyperref}
+\usepackage{algorithm}
+\usepackage{algorithmic}
+\usepackage{listings}
+\usepackage{xcolor}
+\usepackage{geometry}
+\usepackage{booktabs}
+\usepackage{subfig}
+\usepackage{cite}
+
+\geometry{margin=1in}
+
+\title{Sensor Fusion for Navigation Systems:\\
+Implementation and Theory}
+\author{Sensor Fusion Project}
+\date{\today}
+
+\lstset{
+    language=C++,
+    basicstyle=\ttfamily\small,
+    keywordstyle=\color{blue},
+    commentstyle=\color{gray},
+    stringstyle=\color{red},
+    numbers=left,
+    numberstyle=\tiny,
+    frame=single,
+    breaklines=true
+}
+
+\begin{document}
+
+\maketitle
+\tableofcontents
+\newpage
+
+\section{Introduction}
+
+This document provides comprehensive documentation for a sensor fusion navigation system that integrates data from multiple sensors including Inertial Measurement Units (IMU), Global Positioning System (GPS), barometric pressure sensors, and magnetometers. The implementation is designed for cross-platform deployment, supporting both x64 simulation environments and embedded systems.
+
+\subsection{Project Goals}
+
+\begin{itemize}
+    \item Implement accurate sensor models with realistic error characteristics
+    \item Develop Extended Kalman Filter (EKF) for optimal state estimation
+    \item Support cross-compilation for embedded platforms
+    \item Provide comprehensive documentation based on established literature
+    \item Create modular, testable, and maintainable C++ code
+\end{itemize}
+
+\subsection{System Overview}
+
+The sensor fusion system combines complementary sensor measurements to estimate the navigation state (position, velocity, and attitude) of a moving platform. Each sensor provides different information with varying accuracy and update rates:
+
+\begin{itemize}
+    \item \textbf{IMU}: High-rate (100-1000 Hz) acceleration and angular velocity measurements
+    \item \textbf{GPS}: Low-rate (1-10 Hz) absolute position and velocity with bounded errors
+    \item \textbf{Barometer}: Medium-rate (10-50 Hz) altitude measurements
+    \item \textbf{Magnetometer}: Medium-rate (10-100 Hz) heading reference
+\end{itemize}
+
+\section{Theoretical Background}
+
+\subsection{Navigation State Representation}
+
+The navigation state vector consists of position, velocity, and attitude:
+
+\begin{equation}
+\mathbf{x} = \begin{bmatrix}
+\mathbf{p}^n \\
+\mathbf{v}^n \\
+\mathbf{q} \\
+\mathbf{b}_a \\
+\mathbf{b}_g
+\end{bmatrix}
+\end{equation}
+
+where:
+\begin{itemize}
+    \item $\mathbf{p}^n = [p_N, p_E, p_D]^T$ is position in North-East-Down (NED) frame
+    \item $\mathbf{v}^n = [v_N, v_E, v_D]^T$ is velocity in NED frame
+    \item $\mathbf{q} = [q_w, q_x, q_y, q_z]^T$ is orientation quaternion
+    \item $\mathbf{b}_a = [b_{ax}, b_{ay}, b_{az}]^T$ is accelerometer bias
+    \item $\mathbf{b}_g = [b_{gx}, b_{gy}, b_{gz}]^T$ is gyroscope bias
+\end{itemize}
+
+\subsection{Inertial Measurement Unit (IMU)}
+
+\subsubsection{IMU Measurement Model}
+
+The IMU provides measurements of specific force and angular velocity in the body frame:
+
+\begin{equation}
+\tilde{\mathbf{f}} = \mathbf{f} + \mathbf{b}_a + \mathbf{n}_a
+\end{equation}
+
+\begin{equation}
+\tilde{\boldsymbol{\omega}} = \boldsymbol{\omega} + \mathbf{b}_g + \mathbf{n}_g
+\end{equation}
+
+where $\mathbf{n}_a$ and $\mathbf{n}_g$ are white Gaussian noise processes.
+
+\subsubsection{Error Models}
+
+MEMS IMU errors are typically classified as \cite{aggarwal2013comparison}:
+
+\begin{itemize}
+    \item \textbf{Constant bias}: Fixed offset, determined during calibration
+    \item \textbf{Bias instability}: Slow-varying bias modeled as random walk or first-order Gauss-Markov process
+    \item \textbf{White noise}: High-frequency random noise
+    \item \textbf{Scale factor error}: Multiplicative error in sensitivity
+    \item \textbf{Cross-axis sensitivity}: Non-orthogonality of sensor axes
+    \item \textbf{Temperature effects}: Temperature-dependent bias and scale factor
+\end{itemize}
+
+The bias evolution is modeled as:
+
+\begin{equation}
+\dot{\mathbf{b}}_a = -\frac{1}{\tau_a}\mathbf{b}_a + \mathbf{w}_a
+\end{equation}
+
+\begin{equation}
+\dot{\mathbf{b}}_g = -\frac{1}{\tau_g}\mathbf{b}_g + \mathbf{w}_g
+\end{equation}
+
+where $\tau$ is the correlation time and $\mathbf{w}$ is white noise driving the random walk.
+
+\subsection{Strapdown Navigation Equations}
+
+The mechanization equations for strapdown inertial navigation are \cite{savage1998strapdown, titterton2004strapdown}:
+
+\begin{equation}
+\dot{\mathbf{p}}^n = \mathbf{v}^n
+\end{equation}
+
+\begin{equation}
+\dot{\mathbf{v}}^n = \mathbf{C}_b^n \mathbf{f}^b + \mathbf{g}^n - (2\boldsymbol{\omega}_{ie}^n + \boldsymbol{\omega}_{en}^n) \times \mathbf{v}^n
+\end{equation}
+
+\begin{equation}
+\dot{\mathbf{q}} = \frac{1}{2}\mathbf{q} \otimes \boldsymbol{\omega}_{nb}^b
+\end{equation}
+
+where:
+\begin{itemize}
+    \item $\mathbf{C}_b^n$ is the direction cosine matrix from body to navigation frame
+    \item $\mathbf{g}^n$ is gravity in the navigation frame
+    \item $\boldsymbol{\omega}_{ie}^n$ is Earth rotation rate
+    \item $\boldsymbol{\omega}_{en}^n$ is transport rate
+    \item $\otimes$ denotes quaternion multiplication
+\end{itemize}
+
+\subsection{GPS Measurement Model}
+
+GPS provides measurements of position and velocity with errors:
+
+\begin{equation}
+\mathbf{z}_{GPS,p} = \mathbf{p}^n + \mathbf{n}_{GPS,p}
+\end{equation}
+
+\begin{equation}
+\mathbf{z}_{GPS,v} = \mathbf{v}^n + \mathbf{n}_{GPS,v}
+\end{equation}
+
+Typical GPS accuracy (95\% confidence):
+\begin{itemize}
+    \item Horizontal position: 2-5 meters
+    \item Vertical position: 3-8 meters
+    \item Velocity: 0.1-0.3 m/s
+\end{itemize}
+
+\subsection{Barometric Altimeter}
+
+The barometric altimeter measures altitude based on atmospheric pressure:
+
+\begin{equation}
+h = 44330 \left(1 - \left(\frac{P}{P_0}\right)^{0.1903}\right)
+\end{equation}
+
+where $P$ is measured pressure and $P_0$ is sea-level pressure (101325 Pa).
+
+Measurement model:
+\begin{equation}
+\mathbf{z}_{baro} = -p_D + \mathbf{n}_{baro}
+\end{equation}
+
+Typical accuracy: 1-3 meters in stable conditions.
+
+\subsection{Magnetometer}
+
+The magnetometer measures the local magnetic field:
+
+\begin{equation}
+\tilde{\mathbf{m}}^b = \mathbf{C}_n^b \mathbf{m}^n + \mathbf{b}_m + \mathbf{n}_m
+\end{equation}
+
+where $\mathbf{m}^n$ is the local magnetic field in the navigation frame.
+
+\section{Extended Kalman Filter}
+
+\subsection{Filter Formulation}
+
+The EKF provides optimal state estimation for the nonlinear navigation equations \cite{bar2001estimation}. The filter operates in two phases:
+
+\subsubsection{Prediction (Time Update)}
+
+\begin{equation}
+\hat{\mathbf{x}}_{k|k-1} = f(\hat{\mathbf{x}}_{k-1|k-1}, \mathbf{u}_k)
+\end{equation}
+
+\begin{equation}
+\mathbf{P}_{k|k-1} = \mathbf{F}_k \mathbf{P}_{k-1|k-1} \mathbf{F}_k^T + \mathbf{Q}_k
+\end{equation}
+
+where:
+\begin{itemize}
+    \item $\mathbf{F}_k$ is the state transition matrix (Jacobian of $f$)
+    \item $\mathbf{Q}_k$ is the process noise covariance
+\end{itemize}
+
+\subsubsection{Update (Measurement Update)}
+
+\begin{equation}
+\mathbf{K}_k = \mathbf{P}_{k|k-1} \mathbf{H}_k^T (\mathbf{H}_k \mathbf{P}_{k|k-1} \mathbf{H}_k^T + \mathbf{R}_k)^{-1}
+\end{equation}
+
+\begin{equation}
+\hat{\mathbf{x}}_{k|k} = \hat{\mathbf{x}}_{k|k-1} + \mathbf{K}_k (\mathbf{z}_k - h(\hat{\mathbf{x}}_{k|k-1}))
+\end{equation}
+
+\begin{equation}
+\mathbf{P}_{k|k} = (\mathbf{I} - \mathbf{K}_k \mathbf{H}_k) \mathbf{P}_{k|k-1}
+\end{equation}
+
+where:
+\begin{itemize}
+    \item $\mathbf{H}_k$ is the measurement matrix (Jacobian of $h$)
+    \item $\mathbf{R}_k$ is the measurement noise covariance
+    \item $\mathbf{K}_k$ is the Kalman gain
+\end{itemize}
+
+\subsection{State Transition Matrix}
+
+For the INS error-state model, the state transition matrix is:
+
+\begin{equation}
+\mathbf{F} = \begin{bmatrix}
+\mathbf{0} & \mathbf{I} & \mathbf{0} & \mathbf{0} & \mathbf{0} \\
+\mathbf{0} & -2[\boldsymbol{\omega}_{ie}^n]_\times & [\mathbf{C}_b^n\mathbf{f}^b]_\times & \mathbf{C}_b^n & \mathbf{0} \\
+\mathbf{0} & \mathbf{0} & -[\boldsymbol{\omega}_{ib}^b]_\times & \mathbf{0} & -\mathbf{C}_b^n \\
+\mathbf{0} & \mathbf{0} & \mathbf{0} & -\frac{1}{\tau_a}\mathbf{I} & \mathbf{0} \\
+\mathbf{0} & \mathbf{0} & \mathbf{0} & \mathbf{0} & -\frac{1}{\tau_g}\mathbf{I}
+\end{bmatrix}
+\end{equation}
+
+where $[\cdot]_\times$ denotes the skew-symmetric matrix operator.
+
+\subsection{Measurement Models}
+
+\subsubsection{GPS Position Measurement}
+
+\begin{equation}
+\mathbf{H}_{GPS,p} = \begin{bmatrix} \mathbf{I}_3 & \mathbf{0} & \mathbf{0} & \mathbf{0} & \mathbf{0} \end{bmatrix}
+\end{equation}
+
+\subsubsection{GPS Velocity Measurement}
+
+\begin{equation}
+\mathbf{H}_{GPS,v} = \begin{bmatrix} \mathbf{0} & \mathbf{I}_3 & \mathbf{0} & \mathbf{0} & \mathbf{0} \end{bmatrix}
+\end{equation}
+
+\subsubsection{Barometer Measurement}
+
+\begin{equation}
+\mathbf{H}_{baro} = \begin{bmatrix} 0 & 0 & -1 & \mathbf{0}_{1\times12} \end{bmatrix}
+\end{equation}
+
+\section{Implementation Details}
+
+\subsection{Software Architecture}
+
+The implementation follows object-oriented design principles with clear separation of concerns:
+
+\begin{itemize}
+    \item \textbf{Sensor classes}: Encapsulate sensor physics and error models
+    \item \textbf{Fusion classes}: Implement Kalman filter algorithms
+    \item \textbf{Utility classes}: Provide coordinate transformations and math operations
+\end{itemize}
+
+\subsection{Key Design Features}
+
+\begin{enumerate}
+    \item \textbf{Header-only matrix library}: Using Eigen3 for efficient linear algebra
+    \item \textbf{Modular sensor interface}: Easy to add new sensor types
+    \item \textbf{Configurable error models}: Runtime parameter adjustment
+    \item \textbf{Cross-compilation support}: CMake toolchain files for ARM targets
+    \item \textbf{Minimal dependencies}: Suitable for embedded deployment
+\end{enumerate}
+
+\subsection{Build Instructions}
+
+\subsubsection{x64 Build}
+
+\begin{lstlisting}[language=bash]
+mkdir build && cd build
+cmake ..
+make
+make test
+\end{lstlisting}
+
+\subsubsection{ARM Cross-Compilation}
+
+\begin{lstlisting}[language=bash]
+mkdir build-arm && cd build-arm
+cmake -DCMAKE_TOOLCHAIN_FILE=../toolchain-arm.cmake ..
+make
+\end{lstlisting}
+
+\section{Sensor Specifications}
+
+\subsection{IMU Specifications}
+
+Typical MEMS IMU characteristics (consumer-grade):
+
+\begin{table}[h]
+\centering
+\begin{tabular}{lcc}
+\toprule
+Parameter & Accelerometer & Gyroscope \\
+\midrule
+Range & $\pm 16$ g & $\pm 2000$ deg/s \\
+Noise density & $150$ $\mu$g/$\sqrt{Hz}$ & $0.01$ deg/s/$\sqrt{Hz}$ \\
+Bias instability & $40$ $\mu$g & $10$ deg/h \\
+Scale factor error & $0.5$ \% & $0.5$ \% \\
+Temperature coefficient & $0.01$ \%/°C & $0.01$ \%/°C \\
+\bottomrule
+\end{tabular}
+\caption{Typical MEMS IMU specifications}
+\end{table}
+
+\subsection{GPS Specifications}
+
+\begin{table}[h]
+\centering
+\begin{tabular}{lc}
+\toprule
+Parameter & Value \\
+\midrule
+Horizontal accuracy (95\%) & 2.5 m \\
+Vertical accuracy (95\%) & 5.0 m \\
+Velocity accuracy (95\%) & 0.1 m/s \\
+Update rate & 1-10 Hz \\
+Time to first fix & 30 s (cold start) \\
+\bottomrule
+\end{tabular}
+\caption{GPS receiver specifications}
+\end{table}
+
+\section{Validation and Testing}
+
+\subsection{Unit Tests}
+
+Individual sensor models and filter components are tested:
+\begin{itemize}
+    \item IMU error model validation
+    \item Coordinate transformation accuracy
+    \item EKF numerical stability
+    \item Sensor fusion convergence
+\end{itemize}
+
+\subsection{Simulation Scenarios}
+
+\begin{enumerate}
+    \item \textbf{Stationary test}: Verify bias estimation
+    \item \textbf{Constant velocity}: Validate basic integration
+    \item \textbf{Turning maneuver}: Test attitude estimation
+    \item \textbf{GPS outage}: Evaluate dead-reckoning performance
+    \item \textbf{3D trajectory}: Full system validation
+\end{enumerate}
+
+\section{Performance Analysis}
+
+\subsection{Error Propagation}
+
+Without GPS updates, INS errors grow according to \cite{woodman2007introduction}:
+
+\begin{itemize}
+    \item Position error: $\propto t^3$ (gyro bias) and $\propto t^2$ (accel bias)
+    \item Velocity error: $\propto t^2$ (gyro bias) and $\propto t$ (accel bias)
+    \item Attitude error: $\propto t$ (gyro bias)
+\end{itemize}
+
+\subsection{Fusion Benefits}
+
+Sensor fusion provides:
+\begin{itemize}
+    \item GPS bounds long-term drift
+    \item IMU provides high-rate, smooth state estimates
+    \item Barometer improves vertical accuracy
+    \item Magnetometer provides heading reference
+\end{itemize}
+
+\section{Future Enhancements}
+
+\subsection{Algorithm Improvements}
+
+\begin{itemize}
+    \item Unscented Kalman Filter (UKF) implementation \cite{wan2000unscented}
+    \item Adaptive covariance tuning
+    \item Multi-rate sensor handling
+    \item Outlier rejection and fault detection
+\end{itemize}
+
+\subsection{Additional Sensors}
+
+\begin{itemize}
+    \item Visual odometry integration
+    \item Wheel encoder fusion (ground vehicles)
+    \item Ultra-wideband (UWB) ranging
+    \item LiDAR-based localization
+\end{itemize}
+
+\section{Conclusion}
+
+This document describes a comprehensive sensor fusion system for navigation. The implementation balances theoretical rigor with practical considerations for embedded deployment. The modular architecture enables easy extension and customization for specific applications.
+
+\bibliographystyle{ieeetr}
+\bibliography{references}
+
+\end{document}
