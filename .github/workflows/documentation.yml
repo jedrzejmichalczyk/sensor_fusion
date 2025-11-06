@@ -1,0 +1,187 @@
+name: Build Documentation
+
+on:
+  push:
+    branches: [ main, master, develop ]
+    paths:
+      - 'doc/**'
+      - '.github/workflows/documentation.yml'
+  pull_request:
+    branches: [ main, master ]
+    paths:
+      - 'doc/**'
+  workflow_dispatch:
+
+jobs:
+  build-latex:
+    name: Build LaTeX Documentation
+    runs-on: ubuntu-22.04
+
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+
+    - name: Install LaTeX
+      run: |
+        sudo apt-get update
+        sudo apt-get install -y texlive-latex-base texlive-latex-extra \
+          texlive-fonts-recommended texlive-fonts-extra \
+          texlive-science texlive-bibtex-extra biber \
+          latexmk
+
+    - name: Build PDF documentation
+      run: |
+        cd doc
+        make
+
+    - name: Check if PDF was created
+      run: |
+        if [ -f doc/sensor_fusion_documentation.pdf ]; then
+          echo "✅ PDF successfully generated"
+          ls -lh doc/sensor_fusion_documentation.pdf
+        else
+          echo "❌ PDF generation failed"
+          exit 1
+        fi
+
+    - name: Upload PDF artifact
+      uses: actions/upload-artifact@v3
+      with:
+        name: documentation-pdf
+        path: doc/sensor_fusion_documentation.pdf
+
+    - name: Upload LaTeX logs on failure
+      if: failure()
+      uses: actions/upload-artifact@v3
+      with:
+        name: latex-build-logs
+        path: |
+          doc/*.log
+          doc/*.aux
+          doc/*.blg
+
+  build-doxygen:
+    name: Build Doxygen Documentation
+    runs-on: ubuntu-22.04
+
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+
+    - name: Install Doxygen
+      run: |
+        sudo apt-get update
+        sudo apt-get install -y doxygen graphviz
+
+    - name: Create Doxygen config
+      run: |
+        cat > Doxyfile << 'EOF'
+        PROJECT_NAME           = "Sensor Fusion Navigation"
+        PROJECT_BRIEF          = "Multi-sensor fusion for navigation using Extended Kalman Filter"
+        OUTPUT_DIRECTORY       = doxygen
+        INPUT                  = include/ src/ README.md
+        RECURSIVE              = YES
+        EXTRACT_ALL            = YES
+        EXTRACT_PRIVATE        = YES
+        EXTRACT_STATIC         = YES
+        GENERATE_HTML          = YES
+        GENERATE_LATEX         = NO
+        HTML_OUTPUT            = html
+        USE_MDFILE_AS_MAINPAGE = README.md
+        HAVE_DOT               = YES
+        CALL_GRAPH             = YES
+        CALLER_GRAPH           = YES
+        DOT_IMAGE_FORMAT       = svg
+        INTERACTIVE_SVG        = YES
+        FILE_PATTERNS          = *.cpp *.hpp *.h *.md
+        EXCLUDE_PATTERNS       = */build/* */external/*
+        JAVADOC_AUTOBRIEF      = YES
+        OPTIMIZE_OUTPUT_FOR_C  = NO
+        MARKDOWN_SUPPORT       = YES
+        AUTOLINK_SUPPORT       = YES
+        EOF
+
+    - name: Generate Doxygen documentation
+      run: doxygen Doxyfile
+
+    - name: Upload Doxygen HTML
+      uses: actions/upload-artifact@v3
+      with:
+        name: doxygen-html
+        path: doxygen/html/
+
+  deploy-docs:
+    name: Deploy Documentation to GitHub Pages
+    runs-on: ubuntu-22.04
+    needs: [build-latex, build-doxygen]
+    if: github.event_name == 'push' && (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/master')
+    permissions:
+      contents: write
+
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+
+    - name: Download PDF
+      uses: actions/download-artifact@v3
+      with:
+        name: documentation-pdf
+        path: docs-deploy/
+
+    - name: Download Doxygen HTML
+      uses: actions/download-artifact@v3
+      with:
+        name: doxygen-html
+        path: docs-deploy/doxygen/
+
+    - name: Create index page
+      run: |
+        cat > docs-deploy/index.html << 'EOF'
+        <!DOCTYPE html>
+        <html>
+        <head>
+            <title>Sensor Fusion Navigation - Documentation</title>
+            <style>
+                body { font-family: Arial, sans-serif; margin: 40px; }
+                h1 { color: #333; }
+                .doc-link {
+                    display: block;
+                    margin: 20px 0;
+                    padding: 20px;
+                    background: #f5f5f5;
+                    border-radius: 8px;
+                    text-decoration: none;
+                    color: #333;
+                }
+                .doc-link:hover { background: #e0e0e0; }
+            </style>
+        </head>
+        <body>
+            <h1>Sensor Fusion Navigation System - Documentation</h1>
+            <p>Multi-sensor fusion for navigation using Extended Kalman Filter (EKF)</p>
+
+            <a href="sensor_fusion_documentation.pdf" class="doc-link">
+                <h2>📄 Technical Documentation (PDF)</h2>
+                <p>Complete mathematical formulation, algorithms, and implementation details</p>
+            </a>
+
+            <a href="doxygen/index.html" class="doc-link">
+                <h2>📚 API Documentation (Doxygen)</h2>
+                <p>Code documentation with class diagrams and call graphs</p>
+            </a>
+
+            <a href="https://github.com/jedrzejmichalczyk/sensor_fusion" class="doc-link">
+                <h2>💻 Source Code (GitHub)</h2>
+                <p>View the complete source code and examples</p>
+            </a>
+        </body>
+        </html>
+        EOF
+
+    - name: Deploy to GitHub Pages
+      uses: peaceiris/actions-gh-pages@v3
+      with:
+        github_token: ${{ secrets.GITHUB_TOKEN }}
+        publish_dir: ./docs-deploy
+        publish_branch: gh-pages
+        force_orphan: true

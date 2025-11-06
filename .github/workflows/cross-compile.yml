@@ -1,0 +1,162 @@
+name: Cross-Compile for Embedded
+
+on:
+  push:
+    branches: [ main, master, develop ]
+  pull_request:
+    branches: [ main, master ]
+  workflow_dispatch:
+
+jobs:
+  cross-compile-arm:
+    name: Cross-compile for ARM (${{ matrix.arch }})
+    runs-on: ubuntu-22.04
+    strategy:
+      matrix:
+        arch: [armhf, arm64]
+        include:
+          - arch: armhf
+            toolchain: arm-linux-gnueabihf
+            compiler_package: gcc-arm-linux-gnueabihf g++-arm-linux-gnueabihf
+          - arch: arm64
+            toolchain: aarch64-linux-gnu
+            compiler_package: gcc-aarch64-linux-gnu g++-aarch64-linux-gnu
+
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+
+    - name: Install cross-compilation toolchain
+      run: |
+        sudo apt-get update
+        sudo apt-get install -y cmake ${{ matrix.compiler_package }}
+
+    - name: Create toolchain file
+      run: |
+        cat > toolchain-${{ matrix.arch }}.cmake << EOF
+        set(CMAKE_SYSTEM_NAME Linux)
+        set(CMAKE_SYSTEM_PROCESSOR ${{ matrix.arch }})
+
+        set(CMAKE_C_COMPILER ${{ matrix.toolchain }}-gcc)
+        set(CMAKE_CXX_COMPILER ${{ matrix.toolchain }}-g++)
+
+        set(CMAKE_FIND_ROOT_PATH /usr/${{ matrix.toolchain }})
+        set(CMAKE_FIND_ROOT_PATH_MODE_PROGRAM NEVER)
+        set(CMAKE_FIND_ROOT_PATH_MODE_LIBRARY ONLY)
+        set(CMAKE_FIND_ROOT_PATH_MODE_INCLUDE ONLY)
+
+        set(EMBEDDED_BUILD ON CACHE BOOL "Build for embedded system")
+        EOF
+
+    - name: Configure CMake for cross-compilation
+      run: |
+        mkdir build-${{ matrix.arch }}
+        cd build-${{ matrix.arch }}
+        cmake .. -DCMAKE_TOOLCHAIN_FILE=../toolchain-${{ matrix.arch }}.cmake \
+                 -DCMAKE_BUILD_TYPE=Release \
+                 -DBUILD_EXAMPLES=ON \
+                 -DBUILD_TESTS=OFF
+
+    - name: Build for ARM
+      run: |
+        cd build-${{ matrix.arch }}
+        make -j$(nproc)
+
+    - name: Check binary architecture
+      run: |
+        file build-${{ matrix.arch }}/libsensor_fusion.a
+        file build-${{ matrix.arch }}/simulation_example || true
+
+    - name: Measure binary size
+      run: |
+        echo "=== Binary Sizes for ${{ matrix.arch }} ==="
+        ls -lh build-${{ matrix.arch }}/libsensor_fusion.a
+        ls -lh build-${{ matrix.arch }}/simulation_example || true
+        echo "=== Library size breakdown ==="
+        size build-${{ matrix.arch }}/libsensor_fusion.a || true
+
+    - name: Upload ARM binaries
+      uses: actions/upload-artifact@v3
+      with:
+        name: arm-binaries-${{ matrix.arch }}
+        path: |
+          build-${{ matrix.arch }}/libsensor_fusion.a
+          build-${{ matrix.arch }}/simulation_example
+          build-${{ matrix.arch }}/imu_gps_fusion
+
+  cross-compile-riscv:
+    name: Cross-compile for RISC-V
+    runs-on: ubuntu-22.04
+
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+
+    - name: Install RISC-V toolchain
+      run: |
+        sudo apt-get update
+        sudo apt-get install -y cmake gcc-riscv64-linux-gnu g++-riscv64-linux-gnu
+
+    - name: Create RISC-V toolchain file
+      run: |
+        cat > toolchain-riscv64.cmake << 'EOF'
+        set(CMAKE_SYSTEM_NAME Linux)
+        set(CMAKE_SYSTEM_PROCESSOR riscv64)
+
+        set(CMAKE_C_COMPILER riscv64-linux-gnu-gcc)
+        set(CMAKE_CXX_COMPILER riscv64-linux-gnu-g++)
+
+        set(CMAKE_FIND_ROOT_PATH /usr/riscv64-linux-gnu)
+        set(CMAKE_FIND_ROOT_PATH_MODE_PROGRAM NEVER)
+        set(CMAKE_FIND_ROOT_PATH_MODE_LIBRARY ONLY)
+        set(CMAKE_FIND_ROOT_PATH_MODE_INCLUDE ONLY)
+
+        set(EMBEDDED_BUILD ON CACHE BOOL "Build for embedded system")
+        EOF
+
+    - name: Build for RISC-V
+      run: |
+        mkdir build-riscv64
+        cd build-riscv64
+        cmake .. -DCMAKE_TOOLCHAIN_FILE=../toolchain-riscv64.cmake \
+                 -DCMAKE_BUILD_TYPE=Release \
+                 -DBUILD_TESTS=OFF
+        make -j$(nproc)
+
+    - name: Upload RISC-V binaries
+      uses: actions/upload-artifact@v3
+      with:
+        name: riscv64-binaries
+        path: build-riscv64/libsensor_fusion.a
+
+  size-report:
+    name: Generate Size Report
+    runs-on: ubuntu-22.04
+    needs: [cross-compile-arm]
+
+    steps:
+    - name: Download all artifacts
+      uses: actions/download-artifact@v3
+
+    - name: Generate size comparison report
+      run: |
+        echo "# Binary Size Report" > size-report.md
+        echo "" >> size-report.md
+        echo "| Architecture | Library Size | Example Size |" >> size-report.md
+        echo "|--------------|--------------|--------------|" >> size-report.md
+
+        for arch in armhf arm64; do
+          if [ -f arm-binaries-$arch/libsensor_fusion.a ]; then
+            lib_size=$(ls -lh arm-binaries-$arch/libsensor_fusion.a | awk '{print $5}')
+            exe_size=$(ls -lh arm-binaries-$arch/simulation_example 2>/dev/null | awk '{print $5}' || echo "N/A")
+            echo "| $arch | $lib_size | $exe_size |" >> size-report.md
+          fi
+        done
+
+        cat size-report.md
+
+    - name: Upload size report
+      uses: actions/upload-artifact@v3
+      with:
+        name: size-report
+        path: size-report.md

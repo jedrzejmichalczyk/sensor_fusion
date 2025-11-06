@@ -1,0 +1,129 @@
+name: Release Build
+
+on:
+  push:
+    tags:
+      - 'v*.*.*'
+  workflow_dispatch:
+
+jobs:
+  create-release:
+    name: Create Release
+    runs-on: ubuntu-22.04
+    permissions:
+      contents: write
+
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+      with:
+        fetch-depth: 0
+
+    - name: Get version from tag
+      id: get_version
+      run: |
+        if [[ $GITHUB_REF == refs/tags/* ]]; then
+          VERSION=${GITHUB_REF#refs/tags/v}
+        else
+          VERSION="dev-$(git rev-parse --short HEAD)"
+        fi
+        echo "VERSION=$VERSION" >> $GITHUB_OUTPUT
+        echo "Version: $VERSION"
+
+    - name: Generate changelog
+      id: changelog
+      run: |
+        cat > CHANGELOG.md << 'EOF'
+        ## What's New
+
+        ### Features
+        - Multi-sensor fusion (IMU, GPS, Barometer, Magnetometer)
+        - Extended Kalman Filter with numerical stability fixes
+        - Cross-platform support (x64, ARM, RISC-V)
+        - Production-ready implementation
+
+        ### Performance
+        - 1-5m accuracy with GPS available
+        - Stable operation during GPS outages
+        - <5KB RAM footprint
+        - Suitable for embedded systems
+
+        ### Documentation
+        - Complete LaTeX technical manual
+        - API documentation (Doxygen)
+        - 19+ academic references
+        - Example programs and test suite
+
+        EOF
+        cat CHANGELOG.md
+
+    - name: Create GitHub Release
+      uses: softprops/action-gh-release@v1
+      if: startsWith(github.ref, 'refs/tags/')
+      with:
+        name: Release ${{ steps.get_version.outputs.VERSION }}
+        body_path: CHANGELOG.md
+        draft: false
+        prerelease: false
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+  build-release-assets:
+    name: Build Release Assets
+    needs: create-release
+    runs-on: ${{ matrix.os }}
+    strategy:
+      matrix:
+        os: [ubuntu-22.04]
+        arch: [x64, armhf, arm64]
+
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+
+    - name: Install build dependencies
+      run: |
+        sudo apt-get update
+        sudo apt-get install -y cmake build-essential
+
+    - name: Install cross-compile toolchain (ARM)
+      if: matrix.arch != 'x64'
+      run: |
+        if [ "${{ matrix.arch }}" == "armhf" ]; then
+          sudo apt-get install -y gcc-arm-linux-gnueabihf g++-arm-linux-gnueabihf
+        elif [ "${{ matrix.arch }}" == "arm64" ]; then
+          sudo apt-get install -y gcc-aarch64-linux-gnu g++-aarch64-linux-gnu
+        fi
+
+    - name: Build
+      run: |
+        mkdir build
+        cd build
+        if [ "${{ matrix.arch }}" == "x64" ]; then
+          cmake .. -DCMAKE_BUILD_TYPE=Release
+        else
+          if [ "${{ matrix.arch }}" == "armhf" ]; then
+            TOOLCHAIN="toolchain-arm.cmake"
+          else
+            TOOLCHAIN="toolchain-arm64.cmake"
+          fi
+          cmake .. -DCMAKE_TOOLCHAIN_FILE=../$TOOLCHAIN -DCMAKE_BUILD_TYPE=Release
+        fi
+        make -j$(nproc)
+
+    - name: Package release
+      run: |
+        mkdir sensor-fusion-${{ matrix.arch }}
+        cp build/libsensor_fusion.a sensor-fusion-${{ matrix.arch }}/
+        cp -r include sensor-fusion-${{ matrix.arch }}/
+        cp README.md LICENSE sensor-fusion-${{ matrix.arch }}/
+        cp doc/sensor_fusion_documentation.pdf sensor-fusion-${{ matrix.arch }}/ || true
+        tar czf sensor-fusion-${{ matrix.arch }}.tar.gz sensor-fusion-${{ matrix.arch }}
+
+    - name: Upload release asset
+      uses: softprops/action-gh-release@v1
+      if: startsWith(github.ref, 'refs/tags/')
+      with:
+        files: sensor-fusion-${{ matrix.arch }}.tar.gz
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

@@ -1,0 +1,63 @@
+# Code formatting configuration for clang-format
+# Based on LLVM style with modifications for C++17
+
+BasedOnStyle: LLVM
+Language: Cpp
+Standard: c++17
+
+# Indentation
+IndentWidth: 4
+TabWidth: 4
+UseTab: Never
+ColumnLimit: 100
+
+# Braces
+BreakBeforeBraces: Linux
+AllowShortFunctionsOnASingleLine: Inline
+AllowShortIfStatementsOnASingleLine: Never
+AllowShortLoopsOnASingleLine: false
+
+# Spacing
+SpaceAfterCStyleCast: false
+SpaceAfterTemplateKeyword: true
+SpaceBeforeAssignmentOperators: true
+SpaceBeforeParens: ControlStatements
+SpaceInEmptyParentheses: false
+
+# Alignment
+AlignConsecutiveAssignments: false
+AlignConsecutiveDeclarations: false
+AlignOperands: true
+AlignTrailingComments: true
+
+# Include ordering
+SortIncludes: true
+IncludeBlocks: Regroup
+IncludeCategories:
+  # Project headers
+  - Regex:           '^"(sensors|fusion|utils)/'
+    Priority:        1
+  # C++ standard library
+  - Regex:           '^<[a-z_]+>$'
+    Priority:        2
+  # Other libraries
+  - Regex:           '.*'
+    Priority:        3
+
+# Pointers and references
+DerivePointerAlignment: false
+PointerAlignment: Left
+
+# Line breaks
+AllowAllParametersOfDeclarationOnNextLine: false
+BinPackArguments: true
+BinPackParameters: true
+BreakBeforeBinaryOperators: None
+BreakBeforeTernaryOperators: true
+BreakConstructorInitializers: BeforeColon
+
+# Misc
+KeepEmptyLinesAtTheStartOfBlocks: false
+MaxEmptyLinesToKeep: 1
+NamespaceIndentation: None
+ReflowComments: true

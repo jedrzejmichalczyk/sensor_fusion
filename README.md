@@ -1,5 +1,11 @@
 # Sensor Fusion for Navigation Systems
 
+[![CI Build and Test](https://github.com/jedrzejmichalczyk/sensor_fusion/workflows/CI%20Build%20and%20Test/badge.svg)](https://github.com/jedrzejmichalczyk/sensor_fusion/actions/workflows/ci.yml)
+[![Documentation](https://github.com/jedrzejmichalczyk/sensor_fusion/workflows/Build%20Documentation/badge.svg)](https://github.com/jedrzejmichalczyk/sensor_fusion/actions/workflows/documentation.yml)
+[![Cross-Compile](https://github.com/jedrzejmichalczyk/sensor_fusion/workflows/Cross-Compile%20for%20Embedded/badge.svg)](https://github.com/jedrzejmichalczyk/sensor_fusion/actions/workflows/cross-compile.yml)
+[![codecov](https://codecov.io/gh/jedrzejmichalczyk/sensor_fusion/branch/main/graph/badge.svg)](https://codecov.io/gh/jedrzejmichalczyk/sensor_fusion)
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
+
 A comprehensive C++ implementation of sensor fusion for navigation, combining IMU, GPS, barometric, and magnetometer sensors using Extended Kalman Filter (EKF) algorithms. Designed for cross-platform deployment including embedded systems.
 
 ## Features
