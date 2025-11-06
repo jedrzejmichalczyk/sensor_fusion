@@ -23,6 +23,9 @@
 
 using namespace sensor_fusion;
 
+// Constants
+constexpr double GRAVITY = 9.81;  // m/s^2
+
 int main()
 {
     std::cout << "Sensor Fusion Navigation System - Simulation Example\n";

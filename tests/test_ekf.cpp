@@ -11,6 +11,8 @@
 
 using namespace sensor_fusion;
 
+constexpr double GRAVITY = 9.81;  // m/s^2
+
 int main()
 {
     std::cout << "Testing Extended Kalman Filter...\n";
@@ -28,7 +30,9 @@ int main()
     std::cout << "\nTest 2: Prediction with stationary input\n";
     IMUMeasurement imu_meas;
     imu_meas.timestamp = 0.0;
-    imu_meas.accel = {0.0, 0.0, GRAVITY};  // Only gravity
+    imu_meas.accel[0] = 0.0;
+    imu_meas.accel[1] = 0.0;
+    imu_meas.accel[2] = GRAVITY;  // Only gravity
     imu_meas.gyro = {0.0, 0.0, 0.0};
 
     for (int i = 0; i < 100; ++i) {

@@ -12,6 +12,8 @@
 
 using namespace sensor_fusion;
 
+constexpr double GRAVITY = 9.81;  // m/s^2
+
 int main()
 {
     std::cout << "Testing complete sensor fusion system...\n";

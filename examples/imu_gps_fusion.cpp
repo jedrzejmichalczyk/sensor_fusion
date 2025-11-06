@@ -20,6 +20,9 @@
 
 using namespace sensor_fusion;
 
+// Constants
+constexpr double GRAVITY = 9.81;  // m/s^2
+
 // Simple trajectory generator
 struct Trajectory {
     double t;
@@ -36,7 +39,9 @@ Trajectory generateTrajectory(double t) {
     double velocity = 10.0;  // 10 m/s
     traj.position = {velocity * t, 0.0, 0.0};
     traj.velocity = {velocity, 0.0, 0.0};
-    traj.acceleration = {0.0, 0.0, GRAVITY};  // Only gravity in body frame
+    traj.acceleration[0] = 0.0;
+    traj.acceleration[1] = 0.0;
+    traj.acceleration[2] = GRAVITY;  // Only gravity in body frame
 
     return traj;
 }

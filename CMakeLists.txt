@@ -30,12 +30,9 @@ include_directories(
     ${PROJECT_SOURCE_DIR}/include
 )
 
-# Eigen3 library (header-only, lightweight for embedded)
-find_package(Eigen3 3.3 QUIET)
-if(NOT Eigen3_FOUND)
-    message(STATUS "Eigen3 not found, using bundled version")
-    include_directories(${PROJECT_SOURCE_DIR}/external/eigen)
-endif()
+# Matrix library - using custom lightweight implementation
+# Eigen3 not required for this implementation
+message(STATUS "Using built-in matrix operations (no external dependencies)")
 
 # Source files
 set(SENSOR_SOURCES
@@ -54,6 +51,7 @@ set(FUSION_SOURCES
 set(UTILS_SOURCES
     src/utils/math_utils.cpp
     src/utils/coordinate_transform.cpp
+    src/utils/data_logger.cpp
 )
 
 # Library
@@ -92,15 +90,16 @@ install(TARGETS sensor_fusion
 
 install(DIRECTORY include/ DESTINATION include)
 
-# Export package
-include(CMakePackageConfigHelper)
-write_basic_package_version_file(
-    "${CMAKE_CURRENT_BINARY_DIR}/SensorFusionConfigVersion.cmake"
-    VERSION ${PROJECT_VERSION}
-    COMPATIBILITY AnyNewerVersion
-)
-
-install(FILES
-    "${CMAKE_CURRENT_BINARY_DIR}/SensorFusionConfigVersion.cmake"
-    DESTINATION lib/cmake/SensorFusion
-)
+# Export package (optional, commented out for minimal build)
+# Uncomment if CMake 3.0+ package export is needed
+# include(CMakePackageConfigHelper)
+# write_basic_package_version_file(
+#     "${CMAKE_CURRENT_BINARY_DIR}/SensorFusionConfigVersion.cmake"
+#     VERSION ${PROJECT_VERSION}
+#     COMPATIBILITY AnyNewerVersion
+# )
+#
+# install(FILES
+#     "${CMAKE_CURRENT_BINARY_DIR}/SensorFusionConfigVersion.cmake"
+#     DESTINATION lib/cmake/SensorFusion
+# )

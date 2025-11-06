@@ -2,6 +2,7 @@
 #include <cmath>
 #include <algorithm>
 #include <cstring>
+#include <vector>
 
 namespace sensor_fusion {
 
@@ -315,7 +316,7 @@ void ExtendedKalmanFilter::measurementUpdate(const double* H, const double* R,
     // Compute Kalman gain: K = P*H' * (H*P*H' + R)^(-1)
 
     // Compute H*P (meas_size x ERROR_STATE_SIZE)
-    double HP[meas_size * ERROR_STATE_SIZE];
+    std::vector<double> HP(meas_size * ERROR_STATE_SIZE);
     for (int i = 0; i < meas_size; ++i) {
         for (int j = 0; j < ERROR_STATE_SIZE; ++j) {
             HP[i * ERROR_STATE_SIZE + j] = 0.0;
@@ -326,7 +327,7 @@ void ExtendedKalmanFilter::measurementUpdate(const double* H, const double* R,
     }
 
     // Compute H*P*H' (meas_size x meas_size)
-    double HPH[meas_size * meas_size];
+    std::vector<double> HPH(meas_size * meas_size);
     for (int i = 0; i < meas_size; ++i) {
         for (int j = 0; j < meas_size; ++j) {
             HPH[i * meas_size + j] = R[i * meas_size + j];  // Initialize with R
@@ -339,7 +340,7 @@ void ExtendedKalmanFilter::measurementUpdate(const double* H, const double* R,
     // Invert HPH (simple for small matrices)
     // For 1x1: inv = 1/value
     // For larger: use numerical methods (simplified here)
-    double HPH_inv[meas_size * meas_size];
+    std::vector<double> HPH_inv(meas_size * meas_size);
     if (meas_size == 1) {
         HPH_inv[0] = 1.0 / HPH[0];
     } else {
@@ -353,7 +354,7 @@ void ExtendedKalmanFilter::measurementUpdate(const double* H, const double* R,
     }
 
     // Compute P*H' (ERROR_STATE_SIZE x meas_size)
-    double PHt[ERROR_STATE_SIZE * meas_size];
+    std::vector<double> PHt(ERROR_STATE_SIZE * meas_size);
     for (int i = 0; i < ERROR_STATE_SIZE; ++i) {
         for (int j = 0; j < meas_size; ++j) {
             PHt[i * meas_size + j] = 0.0;
@@ -364,7 +365,7 @@ void ExtendedKalmanFilter::measurementUpdate(const double* H, const double* R,
     }
 
     // Compute Kalman gain: K = P*H' * HPH_inv
-    double K[ERROR_STATE_SIZE * meas_size];
+    std::vector<double> K(ERROR_STATE_SIZE * meas_size);
     for (int i = 0; i < ERROR_STATE_SIZE; ++i) {
         for (int j = 0; j < meas_size; ++j) {
             K[i * meas_size + j] = 0.0;
@@ -386,7 +387,7 @@ void ExtendedKalmanFilter::measurementUpdate(const double* H, const double* R,
     applyErrorStateCorrection(error_state);
 
     // Update covariance: P = (I - K*H) * P
-    double KH[ERROR_STATE_SIZE * ERROR_STATE_SIZE];
+    std::vector<double> KH(ERROR_STATE_SIZE * ERROR_STATE_SIZE);
     for (int i = 0; i < ERROR_STATE_SIZE; ++i) {
         for (int j = 0; j < ERROR_STATE_SIZE; ++j) {
             KH[i * ERROR_STATE_SIZE + j] = 0.0;
@@ -396,10 +397,9 @@ void ExtendedKalmanFilter::measurementUpdate(const double* H, const double* R,
         }
     }
 
-    double P_new[ERROR_STATE_SIZE * ERROR_STATE_SIZE];
+    std::vector<double> P_new(ERROR_STATE_SIZE * ERROR_STATE_SIZE);
     for (int i = 0; i < ERROR_STATE_SIZE; ++i) {
         for (int j = 0; j < ERROR_STATE_SIZE; ++j) {
-            double IKH = (i == j ? 1.0 : 0.0) - KH[i * ERROR_STATE_SIZE + j];
             P_new[i * ERROR_STATE_SIZE + j] = 0.0;
             for (int k = 0; k < ERROR_STATE_SIZE; ++k) {
                 double IKH_k = (i == k ? 1.0 : 0.0) - KH[i * ERROR_STATE_SIZE + k];
@@ -409,7 +409,7 @@ void ExtendedKalmanFilter::measurementUpdate(const double* H, const double* R,
     }
 
     // Copy result back
-    std::copy(P_new, P_new + ERROR_STATE_SIZE * ERROR_STATE_SIZE, P_.begin());
+    std::copy(P_new.begin(), P_new.end(), P_.begin());
 }
 
 void ExtendedKalmanFilter::applyErrorStateCorrection(const std::array<double, ERROR_STATE_SIZE>& error_state)
